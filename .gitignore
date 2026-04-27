@@ -1,0 +1,85 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# =========================
+# Virtual Environment
+# =========================
+venv/
+env/
+ENV/
+.venv/
+
+# =========================
+# Django
+# =========================
+*.log
+db.sqlite3
+media/
+staticfiles/
+*.sqlite3
+
+# Django migrations (optional - usually NOT ignored in production repos)
+# If this is a fresh project, you can keep migrations tracked.
+# Uncomment only if needed:
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Celery / Runtime
+# =========================
+celerybeat-schedule
+celerybeat.pid
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# Coverage / Testing
+# =========================
+htmlcov/
+.coverage
+.pytest_cache/
+
+# =========================
+# Docker (if you use later)
+# =========================
+docker-compose.override.yml
+
+# =========================
+# Node (only if frontend added later)
+# =========================
+node_modules/
+npm-debug.log*
