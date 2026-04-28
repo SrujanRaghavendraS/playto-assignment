@@ -4,19 +4,19 @@ This document explains the design decisions, system architecture, and correctnes
 
 The focus is not features, but correctness under concurrency, idempotency, and financial integrity.
 
-
+---
 
 # 1. System Design Overview
 
-Frontend interacts with a Django REST API hosted on Render. The API manages merchant balances, ledger entries, and payout requests.
+Frontend interacts with a Django REST API hosted on Render.
 
-Payouts are processed asynchronously using Celery with Redis as the broker. PostgreSQL is the source of truth.
+Payouts are processed asynchronously using Celery with Redis (Upstash) as broker. PostgreSQL (Neon) is the source of truth.
 
 Frontend (Next.js)
     ↓
 Django REST API (Render)
     ↓
-PostgreSQL (Ledger + Payouts) - hosted on Neon Postgres
+PostgreSQL (Neon)
     ↓
 Redis Queue (Upstash)
     ↓
@@ -24,33 +24,39 @@ Celery Worker (Async payout processing)
 
 ---
 
-# 2. Database Schema Design
+# 2. Database Schema (Actual Models)
 
-Merchant Table: playto_user
-- id (BigInt / UUID)
-- pt_id (String, public identifier)
-- name (String)
-- created_at (Timestamp)
-
-Ledger Table: playto_ledger_entries
+## playto_user
 - id (BigInt)
-- merchant_id (FK)
+- pt_id (UUID)
+- first_name (String)
+- last_name (String)
+
+---
+
+## playto_ledger_entries
+- id (BigInt)
+- user (FK → playto_user)
 - entry_type (CREDIT / DEBIT)
 - amount_paise (BigInteger)
 - reference_id (String)
 - created_at (Timestamp)
 
-Bank Account Table: playto_account_directory
-- id (BigInt)
-- merchant_id (FK)
-- bank_name (String)
-- account_number_hash (String masked)
-- bank_branch (String)
+---
 
-Payout Table: playto_payout
+## playto_account_directory
 - id (BigInt)
-- merchant_id (FK)
-- bank_account_id (FK)
+- user (FK → playto_user)
+- bank_name (String)
+- bank_branch (String)
+- account_number_hash (String masked)
+
+---
+
+## playto_payout
+- id (BigInt)
+- puid (FK → playto_user)
+- bank_account (FK → playto_account_directory)
 - amount_paise (BigInteger)
 - status (PENDING / PROCESSING / COMPLETED / FAILED)
 - idempotency_key (UUID)
@@ -60,67 +66,119 @@ Payout Table: playto_payout
 
 ---
 
-# 3. API Contracts
+# 3. API CONTRACTS (ACTUAL ENDPOINTS)
 
-Merchant Profile:
-GET /api/v1/merchant/{pt_id}
+---
 
+## GET /users/
+Returns all users.
+
+Response:
+[
+  {
+    "pt_id": "uuid",
+    "first_name": "John",
+    "last_name": "Doe"
+  }
+]
+
+---
+
+## POST /profile/
+Request:
 {
-  "pt_id": "M123",
-  "name": "Merchant A",
-  "bank_accounts": []
+  "pt_id":<uuid>
+}
+
+Response:
+{
+  "pt_id": "uuid",
+  "first_name": "John",
+  "last_name": "Doe",
+  "bank_accounts": [
+    {
+      "id": 1,
+      "bank_name": "HDFC",
+      "bank_branch": "BLR",
+      "account_number_hash": "encrypted"
+    }
+  ]
 }
 
 ---
 
-Balance API:
-GET /api/v1/merchant/{pt_id}/balance
+## POST /balance/
 
+Request:
 {
-  "available_balance_paise": 100000,
-  "held_balance_paise": 20000
+  "pt_id":<uuid>
+}
+
+Response:
+{
+  "available_balance": 100000,
+  "held_balance": 20000
 }
 
 ---
 
-Ledger API (Paginated):
-GET /api/v1/merchant/{pt_id}/ledger?page=1
-
+## POST /ledger/
+Request:
 {
-  "results": [],
-  "total_count": 120,
-  "next": "?page=2",
-  "previous": null
+  "pt_id":<uuid>
 }
+
+Response:
+[
+  {
+    "id": 1,
+    "entry_type": "CREDIT",
+    "amount_paise": 5000,
+    "reference_id": "ref123",
+    "created_at": "..."
+  }
+]
 
 ---
 
-Payout Request API:
-POST /api/v1/payouts
-Headers: Idempotency-Key: uuid
+## POST /payouts/
 
+Headers:
+Idempotency-Key: uuid
+
+Request:
 {
-  "pt_id": "M123",
+  "pt_id": "uuid",
   "amount_paise": 5000,
-  "bank_account_id": 1
+  "bank_account_id": 1,
+  "idempotency_key": "uuid"
 }
 
 Response:
 {
   "payout_id": 10,
-  "status": "PENDING"
+  "status": "PENDING",
+  "amount_paise": 5000
 }
 
 ---
 
-Payout List API:
-GET /api/v1/payouts/{pt_id}
+## POST /payouts/list/
 
+Request:
+{
+  "pt_id":<uuid>
+}
+
+Response:
 [
   {
     "id": 1,
     "amount_paise": 1000,
     "status": "COMPLETED",
+    "bank_name": "HDFC",
+    "bank_branch": "BLR",
+    "masked_account": "****1234",
     "failure_reason": null,
     "created_at": "..."
   }
@@ -130,66 +188,69 @@ GET /api/v1/payouts/{pt_id}
 
 # 4. Concurrency Handling
 
-- select_for_update() used on merchant row
-- transaction.atomic() wraps payout creation + balance update
-- prevents double spending when two requests happen at same time
+- select_for_update() used on user balance operations
+- All payout operations wrapped in transaction.atomic()
+- Prevents race conditions during simultaneous payouts
 
-This ensures only one payout succeeds when balance is insufficient.
+Guarantee:
+→ No double spending under concurrent requests
 
 ---
 
 # 5. Idempotency Design
 
-- Idempotency-Key header required
-- Stored per merchant
+- Idempotency-Key required in payout API
+- Stored per user
 - Duplicate requests return same payout response
-- Prevents duplicate payouts under retries or network failures
+- Prevents duplicate payouts due to retries or network issues
 
 ---
 
-# 6. Why Upstash Redis for Celery Broker
+# 6. Why Upstash Redis
 
-- Fully managed Redis (no infra maintenance)
-- Works via HTTP (serverless friendly)
+- Fully managed Redis
+- No infra maintenance
+- Works over HTTP (serverless compatible)
 - Free tier available
-- Works well with Render + Vercel ecosystem
+- Works seamlessly with Render + Vercel
 
 ---
 
-# 7. Celery Design
+# 7. Celery Worker Design
 
-- Async payout processing via worker
-- Simulated outcomes:
-  - 70% success
-  - 20% failure
-  - 10% stuck processing
+State machine:
+PENDING → PROCESSING → COMPLETED / FAILED
+
+Simulation:
+- 70% success
+- 20% failure
+- 10% stuck (retry case)
 
 On failure:
-- Funds are reverted atomically
-- Status set to FAILED
-- Retry logic allows up to 3 attempts
+- funds are reverted atomically
+- status set to FAILED
+- retry logic up to 3 attempts
 
 ---
 
 # 8. Pagination Strategy
 
 Used in:
-- Ledger API
-- Payout history API
+- Ledger API (page_no)
 
 Reason:
-- Ledger grows continuously
-- Prevents large payload responses
-- Improves frontend performance
+- prevents large payloads
+- improves frontend performance
+- ensures scalability of ledger history
 
 ---
 
 # 9. Serializer Design
 
 - Separate request and response serializers
-- Keeps API contract stable
-- Prevents leaking DB structure
-- Makes validation explicit
+- Strict validation using DRF
+- Prevents DB schema leakage
+- Keeps API contracts stable
 
 ---
 
@@ -198,49 +259,69 @@ Reason:
 Logs added for:
 - payout creation
 - payout state transitions
+- async worker execution
 - failure scenarios
 
-Used for debugging async flow and production traceability.
+Used for debugging distributed async flows.
 
 ---
 
 # 11. Error Handling
 
 - Centralized APIException handling
-- Uniform error responses
+- Consistent API error structure
 - Prevents stack trace exposure to frontend
 
 ---
 
-# 12. File Structure Decisions
+# 12. File Structure Design
 
-- models → financial entities
+- models → database entities
 - serializers → API contracts
-- views → business logic
-- tasks → Celery workers
+- views → business logic layer
+- tasks → celery workers
 - services → reusable logic layer
 
-Ensures separation of concerns and maintainability.
+Keeps financial logic modular and testable.
 
 ---
 
-# 13. Testing Approach
+# 13. Frontend Design (Important)
+
+## User Selection Screen
+- Calls /users/
+- Displays list of merchants
+- Clicking user navigates to dashboard
+
+## Dashboard Screen
+- Profile (with bank accounts)
+- Balance (available + held)
+- Ledger table (paginated)
+- Payout history modal
+
+## UX Decisions
+- INR formatting (₹) directly in UI
+- Modal instead of separate page for payouts
+- Pagination controls for ledger navigation
+
+---
+
+# 14. Testing Approach
 
 Two critical tests:
-- Idempotency test (duplicate request safety)
-- Concurrency test (race condition prevention)
 
-These validate financial correctness under stress.
+1. Idempotency test → duplicate request returns same payout
+2. Concurrency test → simultaneous payouts do not overspend balance
 
 ---
 
-# Final Note
+# FINAL NOTE
 
 This system is designed for correctness over features.
 
 Key principles:
 - No race conditions in money movement
-- Strict idempotent APIs
+- Strict idempotency guarantees
 - Integer-based financial model (paise only)
 - Async processing via Celery
-- Predictable state transitions in payouts
+- Predictable payout state machine
