@@ -172,4 +172,5 @@ LOGGING = {
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "https://playto-assignment-six.vercel.app/"
 ]
