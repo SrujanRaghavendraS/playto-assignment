@@ -137,7 +137,7 @@ Response:
 
 ---
 
-## POST /payouts/
+## POST /payouts/ - Feature dissabled as Celery not avl on Free Tier
 
 Headers:
 Idempotency-Key: uuid
