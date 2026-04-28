@@ -12,15 +12,21 @@ Frontend interacts with a Django REST API hosted on Render.
 
 Payouts are processed asynchronously using Celery with Redis (Upstash) as broker. PostgreSQL (Neon) is the source of truth.
 
-Frontend (Next.js)
-    ↓
-Django REST API (Render)
-    ↓
-PostgreSQL (Neon)
-    ↓
-Redis Queue (Upstash)
-    ↓
-Celery Worker (Async payout processing)
+# System Architecture Pipeline
+
+[Frontend - Next.js]
+          │
+          ▼
+[Django REST API - Render]
+          │
+          ▼
+[PostgreSQL - Neon (Source of Truth)]
+          │
+          ▼
+[Redis Queue - Upstash]
+          │
+          ▼
+[Celery Worker - Async Payout Processor]
 
 ---
 
