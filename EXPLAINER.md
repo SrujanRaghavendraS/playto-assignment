@@ -137,7 +137,7 @@ Response:
 
 ---
 
-## POST /payouts/ - Feature dissabled as Celery not avl on Free Tier
+## POST /payouts/ - Feature dissabled as Celery not avl on Free Tier(But implemented in Code and Tested locally)
 
 Headers:
 Idempotency-Key: uuid
