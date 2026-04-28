@@ -11,6 +11,10 @@ class PayoutRequestSerializer(serializers.Serializer):
 
 
 class PayoutListResponseSerializer(serializers.ModelSerializer):
+    bank_name = serializers.CharField(source="bank_account.bank_name", read_only=True)
+    bank_branch = serializers.CharField(source="bank_account.bank_branch", read_only=True)
+    masked_account = serializers.SerializerMethodField()
+
     class Meta:
         model = playto_payout
         fields = [
@@ -18,8 +22,17 @@ class PayoutListResponseSerializer(serializers.ModelSerializer):
             "amount_paise",
             "status",
             "created_at",
-            "failure_reason"
+            "failure_reason",
+            "bank_name",
+            "bank_branch",
+            "masked_account",
         ]
+
+    def get_masked_account(self, obj):
+        acc = obj.bank_account.account_number_hash  # assuming this is stored
+        if not acc:
+            return None
+        return "****" + acc[-4:]
     
 class PayoutListRequestSerializer(serializers.Serializer):
     pt_id = serializers.UUIDField()
