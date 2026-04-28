@@ -1,3 +1,4 @@
+from playto_payout_engine.core.management.commands.seed_data import run_seed
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import APIException, ValidationError, NotFound
@@ -178,3 +179,14 @@ class GetAllUsersView(BaseAPIView):
         except Exception as e:
             logger.error("Something went Wrong !")
             raise APIException(str(e))
+
+
+class SeedDataView(BaseAPIView):
+
+    def post(self, request):
+
+        result = run_seed()
+
+        return Response({
+            "message": result
+        })

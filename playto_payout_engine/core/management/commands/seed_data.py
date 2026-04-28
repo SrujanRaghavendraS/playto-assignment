@@ -1,65 +1,53 @@
-from django.core.management.base import BaseCommand
-from core.models import (
-    playto_user,
-    playto_account_directory,
-    playto_ledger_entries
-)
-import uuid
+def run_seed():
+    from core.models import (
+        playto_user,
+        playto_account_directory,
+        playto_payout,
+    )
 
+    # Avoid duplicates (important)
+    if playto_user.objects.filter(pt_id="PT1001").exists():
+        return "Already seeded"
 
-class Command(BaseCommand):
-    help = "Seed initial data"
+    user1 = playto_user.objects.create(
+        pt_id="PT1001",
+        first_name="Aarav",
+        last_name="Sharma"
+    )
 
-    def handle(self, *args, **kwargs):
+    user2 = playto_user.objects.create(
+        pt_id="PT1002",
+        first_name="Ishita",
+        last_name="Verma"
+    )
 
-        playto_ledger_entries.objects.all().delete()
-        playto_account_directory.objects.all().delete()
-        playto_user.objects.all().delete()
+    acc1 = playto_account_directory.objects.create(
+        user=user1,
+        bank_name="HDFC Bank",
+        bank_branch="Bangalore",
+        account_number_hash="123456789012"
+    )
 
-        user1 = playto_user.objects.create(
-            first_name="Srujan",
-            last_name="R",
-        )
+    acc2 = playto_account_directory.objects.create(
+        user=user1,
+        bank_name="ICICI Bank",
+        bank_branch="Mumbai",
+        account_number_hash="987654321098"
+    )
 
-        user2 = playto_user.objects.create(
-            first_name="John",
-            last_name="Doe",
-        )
+    acc3 = playto_account_directory.objects.create(
+        user=user2,
+        bank_name="SBI",
+        bank_branch="Delhi",
+        account_number_hash="555566667777"
+    )
 
-        acc1 = playto_account_directory.objects.create(
-            puid=user1,
-            bank_name="HDFC",
-            bank_branch="Bangalore",
-            account_number_encrypted="enc_123",
-            account_number_hash="hash_123",
-            bank_details={"ifsc": "HDFC0001"}
-        )
+    playto_payout.objects.create(
+        puid=user1,
+        bank_account=acc1,
+        amount_paise=100000,
+        status="COMPLETED",
+        idempotency_key="11111111-1111-1111-1111-111111111111"
+    )
 
-        acc2 = playto_account_directory.objects.create(
-            puid=user2,
-            bank_name="ICICI",
-            bank_branch="Mumbai",
-            account_number_encrypted="enc_456",
-            account_number_hash="hash_456",
-            bank_details={"ifsc": "ICICI0002"}
-        )
-
-        playto_ledger_entries.objects.create(
-            puid=user1,
-            amount_paise=10000,
-            entry_type="CREDIT"
-        )
-
-        playto_ledger_entries.objects.create(
-            puid=user1,
-            amount_paise=5000,
-            entry_type="CREDIT"
-        )
-
-        playto_ledger_entries.objects.create(
-            puid=user2,
-            amount_paise=20000,
-            entry_type="CREDIT"
-        )
-
-        self.stdout.write(self.style.SUCCESS("Seed data inserted successfully"))
+    return "Seed completed"
